@@ -1,0 +1,138 @@
+// 📁 public/index.html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PDF QA with Groq</title>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
+
+// 📁 src/App.js
+import React, { useState } from "react";
+import { pdfjs } from "pdfjs-dist";
+import "./App.css";
+
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+
+function App() {
+  const [pdfText, setPdfText] = useState("");
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const fileReader = new FileReader();
+    fileReader.onload = async () => {
+      const typedArray = new Uint8Array(fileReader.result);
+      const pdf = await pdfjs.getDocument({ data: typedArray }).promise;
+      let text = "";
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const pageText = content.items.map((item) => item.str).join(" ");
+        text += pageText + "\n";
+      }
+      setPdfText(text);
+    };
+    fileReader.readAsArrayBuffer(file);
+  };
+
+  const askQuestion = async () => {
+    if (!pdfText || !question) return;
+    setLoading(true);
+    try {
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer YOUR_GROQ_API_KEY` // Replace with your Groq API Key
+        },
+        body: JSON.stringify({
+          model: "mixtral-8x7b-32768", // or use llama3-8b-8192
+          messages: [
+            {
+              role: "system",
+              content: "You are an assistant answering questions from a document."
+            },
+            {
+              role: "user",
+              content: `Context: ${pdfText}\n\nQuestion: ${question}`
+            }
+          ]
+        })
+      });
+      const data = await res.json();
+      setAnswer(data.choices[0].message.content);
+    } catch (err) {
+      setAnswer("Error fetching answer.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="container">
+      <h1>PDF QA using Groq</h1>
+      <input type="file" accept="application/pdf" onChange={handleFileChange} />
+      <textarea
+        placeholder="Ask a question about the PDF..."
+        rows={4}
+        value={question}
+        onChange={(e) => setQuestion(e.target.value)}
+      ></textarea>
+      <button onClick={askQuestion} disabled={loading}>
+        {loading ? "Asking..." : "Ask"}
+      </button>
+      <h3>Answer:</h3>
+      <p>{answer}</p>
+    </div>
+  );
+}
+
+export default App;
+
+// 📁 src/App.css
+.container {
+  max-width: 600px;
+  margin: 2rem auto;
+  padding: 2rem;
+  font-family: sans-serif;
+  text-align: center;
+}
+
+textarea {
+  width: 100%;
+  margin-top: 1rem;
+  padding: 0.5rem;
+}
+
+button {
+  margin-top: 1rem;
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+}
+
+// 📁 src/index.js
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+
+// 📦 Install dependencies:
+// npm install react react-dom pdfjs-dist
+
+// 🏁 Start app:
+// npm start
